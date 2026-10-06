@@ -1,0 +1,33 @@
+{
+  "name": "dnd-ai-dungeon-master",
+  "version": "0.1.0",
+  "description": "An AI-powered Dungeon Master that prepares and manages D&D campaigns",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest",
+    "lint": "eslint src/",
+    "format": "prettier --write \"src/**/*.js\""
+  },
+  "keywords": [
+    "dnd",
+    "dungeons-and-dragons",
+    "ai",
+    "dungeon-master",
+    "rpg",
+    "tabletop"
+  ],
+  "author": "Adamlamia",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Adamlamia/dnd-ai-dungeon-master.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Adamlamia/dnd-ai-dungeon-master/issues"
+  },
+  "homepage": "https://github.com/Adamlamia/dnd-ai-dungeon-master#readme",
+  "dependencies": {},
+  "devDependencies": {}
+}
