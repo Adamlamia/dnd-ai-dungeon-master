@@ -50,3 +50,9 @@ models/
 sessions/
 campaigns/
 characters/
+
+# Application data
+data/
+.next/
+
+.vercel
