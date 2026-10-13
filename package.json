@@ -28,11 +28,10 @@
   },
   "homepage": "https://github.com/Adamlamia/dnd-ai-dungeon-master#readme",
   "dependencies": {
-    "@prisma/client": "^7.10.0",
+    "@neondatabase/serverless": "^1.2.0",
     "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "next": "^16.3.8",
-    "prisma": "^8.0.0-rc.20",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "^7.0.2"
