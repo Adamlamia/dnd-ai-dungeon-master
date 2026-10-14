@@ -47,13 +47,15 @@ temp/
 models/
 .cache/
 
-# Session data (should not be committed)
-sessions/
-campaigns/
-characters/
+# Legacy local data dirs (obsolete now that storage is Neon Postgres).
+# IMPORTANT: anchored with a leading slash so they only match repo-root dirs,
+# NOT Next.js route folders like src/app/campaigns or src/app/characters.
+/sessions/
+/campaigns/
+/characters/
 
 # Application data
-data/
+/data/
 .next/
 
 .vercel
