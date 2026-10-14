@@ -1,0 +1,88 @@
+PHASE 3 PREP AI VERIFICATION EVIDENCE
+=====================================
+App:      dnd-ai-dungeon-master
+Base URL: https://dnd-ai-dungeon-master-lamia6.vercel.app (Vercel Auth protected)
+Access:   all requests via `vercel curl` (protection-bypass token)
+Commits:  0a6e994 (backend: structured JSON Prep AI + JSON parsers)
+          bcfef1e (UI: PrepPanel on campaign page)
+Deploy:   9zexcczxy (Ready, production)
+Local build: `npm run build` -> Compiled successfully, TypeScript passed, 9/9 routes.
+Date:     2026-10-14
+
+CONTEXT / BUG FIXED
+-------------------
+Prior state: PrepAI returned free-form markdown, and the prepare route's regex
+parsers (extractField/extractList) failed against gpt-oss-120b output. A live
+pre-fix test produced an NPC with all-default fields:
+  name: Unknown NPC | race: Human | classType: Commoner | description: (empty)
+Fix: PrepAI now prompts for a strict JSON schema with Groq
+response_format:{type:"json_object"}; the route parses via JSON.parse with
+normalization + a fence/prose-tolerant safeJsonParse fallback.
+
+--------------------------------------------------------------------------
+1. CREATE CAMPAIGN
+--------------------------------------------------------------------------
+POST /api/campaigns {"name":"Phase3 Prep","theme":"dark fantasy","levelRange":{"min":2,"max":4},"tone":"grim"}
+  -> id 1791954548466-4dovmwa0q
+
+--------------------------------------------------------------------------
+2. GENERATE ONE NPC  (Phase 3 gate)
+--------------------------------------------------------------------------
+POST /api/campaigns/1791954548466-4dovmwa0q/prepare
+{"generateNPCs":true,"npcParams":[{"role":"Quest giver / fence","race":"Tiefling","classType":"Rogue","alignment":"Chaotic Neutral","context":"Runs a black-market shop in a plague-ridden city"}]}
+
+success: True
+  name: Zarael Vex
+  title: The Veiled Vendor
+  role: Quest giver / fence
+  race: Tiefling
+  classType: Rogue
+  alignment: Chaotic Neutral
+  description: A lithe tiefling with ash-gray skin, curling black horns, and a perpetual smirk...
+  personalityTraits: ['Cunning', 'Sarcastic', 'Secretive']
+  motivations: Profit and the thrill of outwitting the city guard, especially when a rare item...
+  secrets: He is the estranged heir to a fallen noble house, concealing his true...
+  sampleDialogue count: 3
+
+=> All structured fields populated (no defaults). Gate condition met.
+
+--------------------------------------------------------------------------
+3. PERSISTENCE / REAPPEAR AFTER REFRESH  (Phase 3 gate)
+--------------------------------------------------------------------------
+GET /api/campaigns?id=1791954548466-4dovmwa0q   (fresh fetch = page refresh)
+  npcs persisted: 1 | first name: Zarael Vex
+
+=> NPC persisted in campaigns.prepared_materials and reappears after refresh.
+
+--------------------------------------------------------------------------
+4. ENCOUNTER GENERATION (smoke test)
+--------------------------------------------------------------------------
+POST .../prepare {"generateEncounters":true,"encounterParams":[{"encounterType":"combat","difficulty":"hard","partyLevel":3,"partySize":4,"context":"Ambush in a flooded sewer"}]}
+success: True
+  name: Sewer Flood Ambush | difficulty: hard | type: combat
+  enemies: 6 | tacticalConsiderations: 5 | rewards.xp: 900
+
+--------------------------------------------------------------------------
+5. LOCATION GENERATION (smoke test)
+--------------------------------------------------------------------------
+POST .../prepare {"generateLocations":true,"locationParams":[{"locationType":"Flooded sewer","atmosphere":"Claustrophobic and foul","purpose":"Goblin ambush lair"}]}
+success: True
+  name: The Gutter Maw | type: Flooded Sewer
+  visualDescription: A dimly lit tunnel choked with stagnant water that rises to the knees...
+  notableFeatures: 4
+  npcsPresent: ['Goblin ambush leader - Skarrik the Crooked', 'Two goblin archers hidden behind the collapsed arch', 'A goblin scout patrolling the water's edge']
+
+--------------------------------------------------------------------------
+6. FINAL PERSISTENCE CHECK (all three material types)
+--------------------------------------------------------------------------
+GET /api/campaigns?id=1791954548466-4dovmwa0q
+  npcs: 1 | encounters: 1 | locations: 1
+(Storyline preserved across merges; addPreparedMaterials appends per type.)
+
+--------------------------------------------------------------------------
+PHASE 3 GATE RESULT: PASS
+--------------------------------------------------------------------------
+Generate one NPC -> structured fields populated -> persists in
+campaigns.prepared_materials -> reappears after a fresh GET (refresh).
+Encounter and location generation also verified. Prep UI panel added to the
+campaign page to drive all four generation types from the browser.

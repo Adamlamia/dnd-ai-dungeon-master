@@ -119,3 +119,29 @@ campaign → linked character → session → narrative persisted → party-awar
 
 **Remaining limitation:** the D&D Beyond import *happy path* is still unverified because no real public character URL was available. Bad-ID handling is now correct. If you provide your own D&D Beyond character URL, I can validate the full import immediately.
 
+---
+
+# Phase 3 Addendum — Prep AI (completed same day)
+
+**Commits:** `0a6e994` (backend), `bcfef1e` (UI) — deployed `9zexcczxy` (Ready).
+**Raw evidence:** [`docs/test-evidence/phase3-prep.txt`](test-evidence/phase3-prep.txt).
+
+**Bug found and fixed:** Prep AI generation was effectively broken. The prepare route used regex parsers (`extractField`/`extractList`) written for plain `Name:` text, but `gpt-oss-120b` returns markdown, so a live pre-fix test produced an all-default NPC (`Unknown NPC / Human / Commoner`, empty description). 
+
+**Fix (structured JSON output):** `AIConfig` gained `jsonMode`/`maxTokens`/`temperature`; `sendToGroq` now sends Groq `response_format:{type:"json_object"}`. `PrepAI.generateNPC/designEncounter/generateLocation` prompt for a strict JSON schema (with reasoning-model headroom via `maxTokens:4000`). The route replaces the regex parsers with `JSON.parse` + normalization and a fence/prose-tolerant `safeJsonParse` fallback. A new **PrepPanel** component on the campaign page drives storyline/NPC/encounter/location generation from the browser and lists what's stored.
+
+## Phase 3 gate: PASS
+
+Generated one NPC against the deployed URL — all structured fields populated (no defaults):
+
+```
+name: Zarael Vex | title: The Veiled Vendor | race: Tiefling | classType: Rogue
+alignment: Chaotic Neutral | personalityTraits: ['Cunning','Sarcastic','Secretive']
+sampleDialogue: 3 lines | motivations/secrets/description: populated
+```
+
+A fresh `GET /api/campaigns?id=…` (page refresh) returned the persisted NPC (`npcs persisted: 1 | first name: Zarael Vex`), satisfying the gate. Encounter ("Sewer Flood Ambush", hard combat, 6 enemies, 900 XP) and location ("The Gutter Maw", 4 features, populated npcsPresent) generation were also verified, and a final fetch confirmed all three material types persist (`npcs:1 | encounters:1 | locations:1`). Local `npm run build` compiled cleanly with TypeScript passing.
+
+**Next:** Phase 4 (proper deployment hardening + post-deploy smoke suite), per the plan.
+
+
