@@ -1,6 +1,6 @@
 -- =============================================================
 -- D&D AI Dungeon Master — Phase 0 schema
--- Target: Supabase (managed Postgres)
+-- Target: Neon (serverless Postgres)
 --
 -- Design notes (see docs/PLAN.md):
 --   * Every table carries a NULLABLE owner_id so the same schema
