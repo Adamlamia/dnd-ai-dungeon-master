@@ -19,10 +19,25 @@ export default function CharactersPage() {
   const [showImportForm, setShowImportForm] = useState(false);
   const [dndbeyondUrl, setDndbeyondUrl] = useState('');
   const [importing, setImporting] = useState(false);
+  const [campaigns, setCampaigns] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState('');
 
   useEffect(() => {
     loadCharacters();
+    loadCampaigns();
   }, []);
+
+  const loadCampaigns = async () => {
+    try {
+      const response = await fetch('/api/campaigns');
+      const data = await response.json();
+      if (data.success) {
+        setCampaigns(data.data.map((c: any) => ({ id: c.id, name: c.name })));
+      }
+    } catch (error) {
+      console.error('Failed to load campaigns:', error);
+    }
+  };
 
   const loadCharacters = async () => {
     try {
@@ -50,6 +65,7 @@ export default function CharactersPage() {
           action: 'import-dndbeyond',
           characterIdOrUrl: dndbeyondUrl,
           playerId: 'player-1', // TODO: Get from auth context
+          campaignId: selectedCampaignId || undefined,
         }),
       });
       
@@ -122,6 +138,24 @@ export default function CharactersPage() {
                 />
                 <p className="text-xs text-gray-500 mt-2">
                   Find your character ID in the D&D Beyond URL
+                </p>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Link to Campaign (optional)
+                </label>
+                <select
+                  value={selectedCampaignId}
+                  onChange={(e) => setSelectedCampaignId(e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
+                >
+                  <option value="">— No campaign —</option>
+                  {campaigns.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-2">
+                  Linked characters appear in the campaign's party roster and inform AI narration.
                 </p>
               </div>
               <button

@@ -10,7 +10,14 @@ interface DiceRollResult {
   breakdown: string;
 }
 
-export default function DiceRoller() {
+interface DiceRollerProps {
+  /** When provided, each roll is also persisted to this session's dice log. */
+  sessionId?: string;
+  /** Called after a roll has been persisted so the parent can refresh. */
+  onRollPersisted?: () => void;
+}
+
+export default function DiceRoller({ sessionId, onRollPersisted }: DiceRollerProps = {}) {
   const [result, setResult] = useState<DiceRollResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +48,29 @@ export default function DiceRoller() {
       }
       
       setResult(data.data);
+
+      // Persist the roll into the active session's dice log
+      if (sessionId) {
+        try {
+          await fetch('/api/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'dice',
+              sessionId,
+              notation: data.data.notation,
+              result: data.data.total,
+              breakdown: data.data.rolls,
+              modifier: data.data.modifier,
+              rolledBy: 'DM',
+              purpose: 'Manual roll',
+            }),
+          });
+          onRollPersisted?.();
+        } catch (persistErr) {
+          console.error('Failed to persist dice roll to session:', persistErr);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to roll dice');
     } finally {

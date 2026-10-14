@@ -22,6 +22,17 @@ interface Session {
   sessionNumber: number;
   status: string;
   narrativeLog: any[];
+  diceRolls?: any[];
+  recap?: string;
+  nextSessionHook?: string;
+}
+
+interface PartyCharacter {
+  id: string;
+  name: string;
+  race: string;
+  classType: string;
+  level: number;
 }
 
 export default function CampaignPage() {
@@ -31,13 +42,16 @@ export default function CampaignPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [party, setParty] = useState<PartyCharacter[]>([]);
   const [loading, setLoading] = useState(true);
   const [playerInput, setPlayerInput] = useState('');
   const [aiThinking, setAiThinking] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   useEffect(() => {
     loadCampaign();
     loadSessions();
+    loadParty();
   }, [campaignId]);
 
   const loadCampaign = async () => {
@@ -49,6 +63,18 @@ export default function CampaignPage() {
       }
     } catch (error) {
       console.error('Failed to load campaign:', error);
+    }
+  };
+
+  const loadParty = async () => {
+    try {
+      const response = await fetch(`/api/characters?campaignId=${campaignId}`);
+      const data = await response.json();
+      if (data.success) {
+        setParty(data.data);
+      }
+    } catch (error) {
+      console.error('Failed to load party:', error);
     }
   };
 
@@ -117,6 +143,9 @@ export default function CampaignPage() {
         });
         
         // Get AI narration
+        const partyRoster = party.length
+          ? party.map(c => `${c.name} (level ${c.level} ${c.race} ${c.classType})`).join('; ')
+          : 'no registered party members';
         const aiResponse = await fetch('/api/ai/narrate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -124,7 +153,7 @@ export default function CampaignPage() {
             action: 'narrate',
             preparedDescription: campaign?.preparedMaterials?.storyline || 'A D&D adventure',
             playerActions: playerInput,
-            context: `Campaign: ${campaign?.name}`,
+            context: `Campaign: ${campaign?.name}. Party: ${partyRoster}.`,
           }),
         });
         
@@ -150,6 +179,48 @@ export default function CampaignPage() {
       console.error('Failed to get AI response:', error);
     } finally {
       setAiThinking(false);
+    }
+  };
+
+  const endSession = async () => {
+    if (!activeSession) return;
+    setEnding(true);
+    try {
+      // Build a plain-text event log from the narrative for the recap AI
+      const sessionEvents = (activeSession.narrativeLog || [])
+        .map((e: any) => `[${e.type}] ${e.content}`)
+        .join('\n');
+
+      let recap = '';
+      if (sessionEvents.trim()) {
+        const recapRes = await fetch('/api/ai/narrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'recap', sessionEvents }),
+        });
+        const recapData = await recapRes.json();
+        if (recapData.success) {
+          recap = recapData.data.response;
+        }
+      }
+
+      await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'end',
+          sessionId: activeSession.id,
+          recap: recap || 'Session ended.',
+          nextSessionHook: '',
+        }),
+      });
+
+      setActiveSession(null);
+      loadSessions();
+    } catch (error) {
+      console.error('Failed to end session:', error);
+    } finally {
+      setEnding(false);
     }
   };
 
@@ -193,9 +264,18 @@ export default function CampaignPage() {
               <div className="bg-gray-800 rounded-lg p-6">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-bold text-white">{activeSession.title}</h2>
-                  <span className="bg-green-900 text-green-300 px-3 py-1 rounded-full text-sm">
-                    In Progress
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="bg-green-900 text-green-300 px-3 py-1 rounded-full text-sm">
+                      In Progress
+                    </span>
+                    <button
+                      onClick={endSession}
+                      disabled={ending}
+                      className="bg-red-700 hover:bg-red-600 disabled:opacity-50 px-3 py-1 rounded-full text-sm font-semibold transition"
+                    >
+                      {ending ? 'Ending…' : 'End Session'}
+                    </button>
+                  </div>
                 </div>
                 
                 {/* Narrative Log */}
@@ -233,20 +313,33 @@ export default function CampaignPage() {
                   {sessions.map((session) => (
                     <div
                       key={session.id}
-                      className="bg-gray-700 rounded px-4 py-3 flex justify-between items-center"
+                      className="bg-gray-700 rounded px-4 py-3"
                     >
-                      <div>
-                        <div className="font-semibold text-white">{session.title}</div>
-                        <div className="text-sm text-gray-400">
-                          {session.narrativeLog?.length || 0} entries
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <div className="font-semibold text-white">{session.title}</div>
+                          <div className="text-sm text-gray-400">
+                            {session.narrativeLog?.length || 0} entries
+                            {session.diceRolls?.length ? ` • ${session.diceRolls.length} rolls` : ''}
+                          </div>
                         </div>
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          session.status === 'completed' ? 'bg-gray-600 text-gray-300' :
+                          'bg-green-900 text-green-300'
+                        }`}>
+                          {session.status}
+                        </span>
                       </div>
-                      <span className={`px-2 py-1 rounded text-xs ${
-                        session.status === 'completed' ? 'bg-gray-600 text-gray-300' :
-                        'bg-green-900 text-green-300'
-                      }`}>
-                        {session.status}
-                      </span>
+                      {session.recap && (
+                        <details className="mt-2">
+                          <summary className="text-sm text-purple-400 cursor-pointer hover:text-purple-300">
+                            Recap
+                          </summary>
+                          <p className="mt-2 text-sm text-gray-300 whitespace-pre-wrap">
+                            {session.recap}
+                          </p>
+                        </details>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -256,7 +349,34 @@ export default function CampaignPage() {
           
           {/* Sidebar */}
           <div className="space-y-6">
-            <DiceRoller />
+            <DiceRoller
+              sessionId={activeSession?.id}
+              onRollPersisted={loadSessions}
+            />
+
+            {/* Party Roster */}
+            <div className="bg-gray-800 rounded-lg p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-white">Party</h3>
+                <a href="/characters" className="text-sm text-purple-400 hover:text-purple-300">Manage</a>
+              </div>
+              {party.length === 0 ? (
+                <p className="text-sm text-gray-400">
+                  No characters linked to this campaign yet. Add them from the Characters page.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {party.map((c) => (
+                    <div key={c.id} className="bg-gray-700 rounded px-3 py-2">
+                      <div className="font-semibold text-white">{c.name}</div>
+                      <div className="text-xs text-gray-400">
+                        Level {c.level} {c.race} {c.classType}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             
             {/* Campaign Info */}
             <div className="bg-gray-800 rounded-lg p-6">
