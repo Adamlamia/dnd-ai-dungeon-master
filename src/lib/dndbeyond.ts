@@ -73,7 +73,15 @@ export async function fetchDnDBeyondCharacter(characterId: string | number): Pro
   const url = `https://character-service.dndbeyond.com/character/v5/character/${characterId}`;
   
   try {
-    const response = await fetch(url);
+    // D&D Beyond's character-service rejects requests without a browser-like
+    // User-Agent (returns 403). Send one so public/shared sheets are retrievable.
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+        Accept: 'application/json',
+      },
+    });
     
     if (!response.ok) {
       if (response.status === 404) {
@@ -88,14 +96,15 @@ export async function fetchDnDBeyondCharacter(characterId: string | number): Pro
       );
     }
     
-    const data = await response.json();
+    const body = await response.json();
     
-    // The API returns { character: { ... } }
-    if (!data.character) {
+    // The v5 character-service returns { success, data: { ...character } }
+    const character = body?.data ?? body?.character;
+    if (!character) {
       throw new DnDBeyondError('Invalid character data received from D&D Beyond', 502);
     }
     
-    return parseDnDBeyondCharacter(data.character);
+    return parseDnDBeyondCharacter(character);
   } catch (error) {
     console.error('Error fetching D&D Beyond character:', error);
     throw error;
@@ -107,83 +116,131 @@ export async function fetchDnDBeyondCharacter(characterId: string | number): Pro
  */
 function parseDnDBeyondCharacter(rawData: any): DnDBeyondCharacter {
   const character = rawData;
-  
-  // Extract ability scores
-  const stats = character.stats?.map((s: any) => ({
-    id: s.id,
-    value: s.value,
-  })) || [];
-  
-  const getStatValue = (statName: string) => {
-    const statMap: Record<string, number> = {
-      'STR': 1, 'DEX': 2, 'CON': 3, 'INT': 4, 'WIS': 5, 'CHA': 6
-    };
-    const statId = statMap[statName];
-    const found = stats.find((s: any) => s.id === statId);
-    return found?.value || 10;
+  const mod = (score: number) => Math.floor((score - 10) / 2);
+
+  // --- Ability scores: base `stats`, plus `bonusStats`, with `overrideStats` winning ---
+  const byId = (arr: any[] | undefined): Record<number, number | null> => {
+    const map: Record<number, number | null> = {};
+    (arr || []).forEach((s: any) => {
+      if (s && s.id != null) map[s.id] = s.value ?? null;
+    });
+    return map;
   };
-  
-  // Extract class info
-  const classes = character.classes?.map((c: any) => ({
+  const base = byId(character.stats);
+  const bonus = byId(character.bonusStats);
+  const override = byId(character.overrideStats);
+  // stat ids: 1 STR, 2 DEX, 3 CON, 4 INT, 5 WIS, 6 CHA
+  const getStatValue = (id: number): number => {
+    if (override[id] != null) return override[id] as number;
+    return (base[id] ?? 10) + (bonus[id] ?? 0);
+  };
+  const STR = getStatValue(1);
+  const DEX = getStatValue(2);
+  const CON = getStatValue(3);
+  const INT = getStatValue(4);
+  const WIS = getStatValue(5);
+  const CHA = getStatValue(6);
+
+  // --- Classes / total level / proficiency bonus ---
+  const classes = (character.classes || []).map((c: any) => ({
     name: c.definition?.name || c.name || 'Unknown',
     level: c.level || 1,
-  })) || [];
-  
-  const totalLevel = classes.reduce((sum: number, c: any) => sum + c.level, 0);
+  }));
+  const totalLevel = classes.reduce((sum: number, c: any) => sum + c.level, 0) || 1;
   const primaryClass = classes[0]?.name || 'Unknown';
-  
-  // Calculate modifiers
-  const calculateModifier = (score: number) => Math.floor((score - 10) / 2);
-  
-  // Extract skills
-  const skills: Record<string, any> = {};
-  character.customActions?.forEach((action: any) => {
-    if (action.subtype === 'skill') {
-      const skillName = action.name;
-      const abilityScore = getStatValue(action.ability);
-      const proficiencyBonus = character.proficiencyBonus || 2;
-      const proficient = action.isProficient || false;
-      
-      skills[skillName] = {
-        value: calculateModifier(abilityScore) + (proficient ? proficiencyBonus : 0),
-        proficient,
-      };
-    }
-  });
-  
-  // Extract hit points
+  // Proficiency bonus is not exposed directly; derive from total level.
+  const proficiencyBonus = 2 + Math.floor((totalLevel - 1) / 4);
+
+  // --- Race / speed ---
+  const race =
+    character.race?.fullName || character.race?.baseRaceName || 'Unknown Race';
+  const speed =
+    character.race?.weightSpeeds?.normal?.walk ||
+    (character.customSpeeds || [])[0]?.speed ||
+    30;
+
+  // --- Hit points ---
+  const maxHp =
+    character.overrideHitPoints ??
+    ((character.baseHitPoints ?? 0) + (character.bonusHitPoints ?? 0));
   const hitPoints = {
-    current: character.hitPoints?.current || character.hitPoints?.maximum || 0,
-    maximum: character.hitPoints?.maximum || 0,
-    temp: character.hitPoints?.temp || 0,
+    current: Math.max(0, maxHp - (character.removedHitPoints ?? 0)),
+    maximum: maxHp,
+    temp: character.temporaryHitPoints ?? 0,
   };
-  
+
+  // --- Armor class (best-effort from equipped armor; falls back to unarmored) ---
+  const dexMod = mod(DEX);
+  let armorClass = 10 + dexMod; // unarmored
+  const inventory = character.inventory || [];
+  const equippedArmor = inventory.find(
+    (i: any) =>
+      i.equipped &&
+      i.definition?.armorClass != null &&
+      i.definition?.armorTypeId != null
+  );
+  if (equippedArmor) {
+    const baseAc = equippedArmor.definition.armorClass as number;
+    const typeId = equippedArmor.definition.armorTypeId; // 1 light, 2 medium, 3 heavy
+    if (typeId === 1) armorClass = baseAc + dexMod;
+    else if (typeId === 2) armorClass = baseAc + Math.min(dexMod, 2);
+    else armorClass = baseAc; // heavy armor: no DEX bonus
+  }
+  const hasShield = inventory.some(
+    (i: any) =>
+      i.equipped &&
+      /shield/i.test(
+        i.definition?.baseArmorName || i.definition?.name || ''
+      )
+  );
+  if (hasShield) armorClass += 2;
+
+  // --- Inventory (names) ---
+  const inventoryNames = inventory
+    .map((i: any) => i.definition?.name)
+    .filter((n: any): n is string => typeof n === 'string' && n.length > 0);
+
+  // --- Traits (fields may be null; may be arrays) ---
+  const t = character.traits || {};
+  const pick = (v: any): string =>
+    Array.isArray(v) ? v.join(', ') : v ? String(v) : '';
+  const traits =
+    t.personalityTraits || t.ideals || t.bonds || t.flaws
+      ? {
+          personalityTraits: pick(t.personalityTraits),
+          ideals: pick(t.ideals),
+          bonds: pick(t.bonds),
+          flaws: pick(t.flaws),
+        }
+      : undefined;
+
+  // NOTE: Full skill bonuses require D&D Beyond's modifier engine, which is not
+  // present in this payload. We import the core sheet and leave skills empty
+  // rather than guess incorrect values.
+  const skills: Record<string, { value: number; proficient: boolean }> = {};
+
   return {
     id: character.id,
     name: character.name || 'Unnamed Character',
-    race: character.race?.fullName || character.race?.name || 'Unknown Race',
+    race,
     class: primaryClass,
     level: totalLevel,
     abilityScores: {
-      strength: getStatValue('STR'),
-      dexterity: getStatValue('DEX'),
-      constitution: getStatValue('CON'),
-      intelligence: getStatValue('INT'),
-      wisdom: getStatValue('WIS'),
-      charisma: getStatValue('CHA'),
+      strength: STR,
+      dexterity: DEX,
+      constitution: CON,
+      intelligence: INT,
+      wisdom: WIS,
+      charisma: CHA,
     },
     hitPoints,
-    armorClass: character.armorClass || 10,
-    speed: character.speed || 30,
-    proficiencyBonus: character.proficiencyBonus || 2,
+    armorClass,
+    speed,
+    proficiencyBonus,
     skills,
-    backstory: character.backstory,
-    traits: character.personalityTraits ? {
-      personalityTraits: character.personalityTraits.trait || '',
-      ideals: character.personalityTraits.ideal || '',
-      bonds: character.personalityTraits.bond || '',
-      flaws: character.personalityTraits.flaw || '',
-    } : undefined,
+    inventory: inventoryNames,
+    backstory: character.notes?.backstory || '',
+    traits,
   };
 }
 
