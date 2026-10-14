@@ -14,7 +14,8 @@ import { characterStorage } from '@/lib/storage';
  */
 export async function importFromDnDBeyond(
   characterIdOrUrl: string,
-  playerId: string
+  playerId: string,
+  campaignId?: string
 ): Promise<Character> {
   // Extract ID if full URL provided
   const characterId = extractCharacterIdFromUrl(characterIdOrUrl) || characterIdOrUrl;
@@ -27,6 +28,7 @@ export async function importFromDnDBeyond(
     id: generateId(),
     name: dndbeyondChar.name,
     playerId,
+    campaignId,
     dndbeyondId: characterId,
     dndbeyondUrl: `https://www.dndbeyond.com/characters/${characterId}`,
     race: dndbeyondChar.race,
@@ -107,6 +109,14 @@ export async function listCharacters(): Promise<Character[]> {
 export async function listCharactersByPlayer(playerId: string): Promise<Character[]> {
   const allCharacters = await listCharacters();
   return allCharacters.filter(char => char.playerId === playerId);
+}
+
+/**
+ * List characters belonging to a campaign's party
+ */
+export async function listCharactersByCampaign(campaignId: string): Promise<Character[]> {
+  const allCharacters = await listCharacters();
+  return allCharacters.filter(char => char.campaignId === campaignId);
 }
 
 /**

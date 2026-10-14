@@ -7,8 +7,10 @@ import {
   updateCharacter, 
   deleteCharacter,
   refreshFromDnDBeyond,
-  listCharactersByPlayer
+  listCharactersByPlayer,
+  listCharactersByCampaign
 } from '@/services/characterService';
+import { DnDBeyondError } from '@/lib/dndbeyond';
 
 // GET /api/characters - List all characters or get specific character
 export async function GET(request: NextRequest) {
@@ -16,6 +18,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const playerId = searchParams.get('playerId');
+    const campaignId = searchParams.get('campaignId');
     const search = searchParams.get('search');
     
     if (id) {
@@ -33,6 +36,12 @@ export async function GET(request: NextRequest) {
     if (playerId) {
       // List characters by player
       const characters = await listCharactersByPlayer(playerId);
+      return NextResponse.json({ success: true, data: characters });
+    }
+    
+    if (campaignId) {
+      // List characters in a campaign's party
+      const characters = await listCharactersByCampaign(campaignId);
       return NextResponse.json({ success: true, data: characters });
     }
     
@@ -62,7 +71,7 @@ export async function POST(request: NextRequest) {
     
     if (action === 'import-dndbeyond') {
       // Import from D&D Beyond
-      const { characterIdOrUrl, playerId } = body;
+      const { characterIdOrUrl, playerId, campaignId } = body;
       
       if (!characterIdOrUrl || !playerId) {
         return NextResponse.json(
@@ -71,16 +80,23 @@ export async function POST(request: NextRequest) {
         );
       }
       
-      const character = await importFromDnDBeyond(characterIdOrUrl, playerId);
-      return NextResponse.json({ success: true, data: character }, { status: 201 });
+      try {
+        const character = await importFromDnDBeyond(characterIdOrUrl, playerId, campaignId);
+        return NextResponse.json({ success: true, data: character }, { status: 201 });
+      } catch (err) {
+        if (err instanceof DnDBeyondError) {
+          return NextResponse.json({ success: false, error: err.message }, { status: err.status });
+        }
+        throw err;
+      }
     }
     
     // Create manual character
-    const { name, playerId, race, classType, level, abilityScores } = body;
+    const { name, playerId, race, classType, level, abilityScores, campaignId } = body;
     
     if (!name || !playerId || !race || !classType) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
+        { success: false, error: 'Missing required fields: name, playerId, race, classType' },
         { status: 400 }
       );
     }
@@ -88,6 +104,7 @@ export async function POST(request: NextRequest) {
     const character = await createCharacter({
       name,
       playerId,
+      campaignId,
       race,
       classType,
       level: level || 1,

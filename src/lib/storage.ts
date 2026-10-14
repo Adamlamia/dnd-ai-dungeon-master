@@ -151,6 +151,7 @@ function rowToCharacter(r: CharacterRow): Character {
     id: r.id,
     name: r.name,
     playerId: r.player_id,
+    campaignId: r.campaign_id ?? undefined,
     dndbeyondId: r.dndbeyond_id ?? undefined,
     dndbeyondUrl: r.dndbeyond_url ?? undefined,
     race: r.race,
@@ -182,7 +183,7 @@ export const characterStorage = {
       values
         (${character.id},
          ${null},
-         ${null},
+         ${character.campaignId ?? null},
          ${character.playerId ?? ''},
          ${character.name},
          ${character.dndbeyondId ?? null},
@@ -204,6 +205,7 @@ export const characterStorage = {
          ${toIso(character.lastUpdated)}::timestamptz)
       on conflict (id) do update set
         player_id = excluded.player_id,
+        campaign_id = excluded.campaign_id,
         name = excluded.name,
         dndbeyond_id = excluded.dndbeyond_id,
         dndbeyond_url = excluded.dndbeyond_url,

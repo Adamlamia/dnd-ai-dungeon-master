@@ -103,7 +103,10 @@ export interface Character {
   id: string;
   name: string;
   playerId: string;
-  
+
+  // Optional link to a campaign's party roster
+  campaignId?: string;
+
   // D&D Beyond integration
   dndbeyondId?: string; // D&D Beyond character ID
   dndbeyondUrl?: string; // Full D&D Beyond URL

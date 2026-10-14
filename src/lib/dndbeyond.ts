@@ -52,6 +52,19 @@ export interface DnDBeyondCharacter {
 }
 
 /**
+ * Error carrying the upstream HTTP status so callers (API routes) can map it
+ * to an appropriate response code and a clear, user-facing message.
+ */
+export class DnDBeyondError extends Error {
+  status: number;
+  constructor(message: string, status: number = 502) {
+    super(message);
+    this.name = 'DnDBeyondError';
+    this.status = status;
+  }
+}
+
+/**
  * Fetch a character from D&D Beyond by character ID
  * @param characterId - The D&D Beyond character ID (from URL)
  * @returns Parsed character data
@@ -63,14 +76,23 @@ export async function fetchDnDBeyondCharacter(characterId: string | number): Pro
     const response = await fetch(url);
     
     if (!response.ok) {
-      throw new Error(`Failed to fetch character: ${response.status} ${response.statusText}`);
+      if (response.status === 404) {
+        throw new DnDBeyondError(
+          `Character not found on D&D Beyond (id ${characterId}). Check the ID/URL and make sure the character sheet is shared/public.`,
+          404
+        );
+      }
+      throw new DnDBeyondError(
+        `D&D Beyond request failed: ${response.status} ${response.statusText}`,
+        response.status
+      );
     }
     
     const data = await response.json();
     
     // The API returns { character: { ... } }
     if (!data.character) {
-      throw new Error('Invalid character data received');
+      throw new DnDBeyondError('Invalid character data received from D&D Beyond', 502);
     }
     
     return parseDnDBeyondCharacter(data.character);
