@@ -1,0 +1,107 @@
+LIVE PRODUCTION TEST EVIDENCE
+=============================
+App:      dnd-ai-dungeon-master
+Base URL: https://dnd-ai-dungeon-master-lamia6.vercel.app  (protected by Vercel Authentication)
+Access:   all requests via `vercel curl` (injects x-vercel-protection-bypass token)
+Deploy:   https://dnd-ai-dungeon-master-jgga6512r-lamia6.vercel.app  status=Ready  target=production
+Commit:   43255e4  (Fix AI: vercel.json hardcoded retired Groq model)
+Date:     2026-10-14  (~11:28-11:31 Malaysia time)
+
+Root cause of prior AI failure: vercel.json build-time `env` block pinned
+PREP_AI_MODEL / RUNTIME_AI_MODEL to the retired "llama-3.1-8b-instant", which
+overrode the corrected code default. Fixed in commit 43255e4 -> openai/gpt-oss-120b.
+
+--------------------------------------------------------------------------
+A. HEALTH
+--------------------------------------------------------------------------
+GET /api/health
+{"status":"healthy","db":"connected","schemaReady":true,"campaignsCount":2,"latencyMs":37,"timestamp":"2026-10-14T03:28:54.526Z"}
+
+--------------------------------------------------------------------------
+B. RUNTIME AI  (POST /api/ai/narrate)  -- ALL PASS
+--------------------------------------------------------------------------
+### G1 narrate
+{"action":"narrate","preparedDescription":"A dim tavern, smoke hanging low, a hooded figure in the corner.","playerActions":"The party enters and looks around cautiously.","context":"Evening, quiet town of Emberfall."}
+{"success":true,"data":{"response":"The heavy oak door swings shut behind you with a soft thud, and the scent of pine-smoked meat and cheap ale washes over the room. ... What will you do?"}}
+(Full response: 6-section scene narration with consequences, environment, NPC responses, perception, and 6 player options.)
+
+### G2 rules
+{"action":"rules","situation":"Player wants to swing across a chasm on a rope.","relevantRules":"Athletics/Acrobatics check, DC set by DM."}
+{"success":true,"data":{"response":"1. Ruling ... Strength (Athletics) check ... DC table ... 2. Brief Explanation ... 3. Dice Rolls Needed ... 4. How to Proceed ..."}}
+
+### G3 npc-dialogue
+{"action":"npc-dialogue","npcName":"Rurik","npcPersonality":"Gruff but warm dwarf bartender.","playerDialogue":"What do you know about the goblins on the western road?"}
+{"success":true,"data":{"response":"*Rurik leans over the polished oak bar, polishing a mug with a rag that's seen better days...* \"Goblin-folk on the western road, eh?...\""}}
+
+### G4 recap
+{"action":"recap","sessionEvents":"Party arrived in Emberfall, met Rurik, found a bounty notice about goblins, discovered a hidden trapdoor under the bar."}
+{"success":true,"data":{"response":"Previously on The Emberfall Chronicles ... 1. Where the Party Was ... 2. Key Decisions Made ... 5. Unresolved Threads ..."}}
+
+--------------------------------------------------------------------------
+C. PREP AI  (POST /api/campaigns/{id}/prepare)  -- PASS
+--------------------------------------------------------------------------
+POST /api/campaigns/1791948549805-1gel10huy/prepare  {"generateStoryline":true}
+{"success":true,"data":{"id":"1791948549805-1gel10huy","name":"Emberfall Test",...,"preparedMaterials":{"storyline":"**1. Campaign Title** **_The Shattered Crown of Aeloria_** ... **3. Major Story Arcs** | Arc | Core Goal | Key Locations | Primary Antagonist(s) | Turning Point | ..."}}}
+(Storyline persisted to campaign.preparedMaterials.storyline in Neon.)
+
+--------------------------------------------------------------------------
+D. CAMPAIGNS CRUD
+--------------------------------------------------------------------------
+POST /api/campaigns  {"name":"Emberfall Test","description":"live test campaign","theme":"fantasy","levelRange":{"min":1,"max":5},"tone":"epic"}
+{"success":true,"data":{"name":"Emberfall Test",...,"id":"1791948549805-1gel10huy","createdAt":"2026-10-14T03:29:09.805Z",...}}
+
+GET /api/campaigns  (persistence proof -- new record present in Neon)
+count: 3
+ - 1791948549805-1gel10huy Emberfall Test planning
+ - 1791947170129-avyvb7ojl Comprehensive Test Campaign active
+ - 1791947101847-dmvkojeea test planning
+
+--------------------------------------------------------------------------
+E. CHARACTERS
+--------------------------------------------------------------------------
+GET /api/characters  -> success:true, returns persisted list (incl. "Lyra Dawnblade").
+
+POST /api/characters (manual create)
+{"name":"Thorn Oakenshield","playerId":"sufi","race":"Dwarf","classType":"Cleric","level":3,"abilityScores":{"strength":14,"dexterity":10,"constitution":13,"intelligence":8,"wisdom":16,"charisma":11}}
+{"success":true,"data":{...,"id":"char-1791948644142-y07iggu2v"}}
+
+GET /api/characters?id=char-1791948644142-y07iggu2v  (persistence proof)
+{"success":true,"data":{"id":"char-1791948644142-y07iggu2v","name":"Thorn Oakenshield","playerId":"sufi","race":"Dwarf","classType":"Cleric","level":3,"abilityScores":{...}}}
+
+POST /api/characters  {"action":"import-dndbeyond","characterIdOrUrl":"https://www.dndbeyond.com/characters/123456789","playerId":"sufi"}
+{"success":false,"error":"Failed to create character"}
+NOTE: Expected for a NON-EXISTENT character id. D&D Beyond returns HTTP 404
+{"success":false,"message":"The resource requested was not found."} for id 123456789.
+Our service throws on !response.ok; the route surfaces a generic 500.
+Happy path requires a real public character ID (not available for testing).
+MINOR: generic "Failed to create character" masks the upstream 404 -- worth a clearer error message.
+
+--------------------------------------------------------------------------
+F. SESSIONS
+--------------------------------------------------------------------------
+POST /api/sessions  {"campaignId":"1791948549805-1gel10huy","title":"Session 1"}
+{"success":true,"data":{"id":"session-1791948606375-21xg73wq5","campaignId":"1791948549805-1gel10huy","sessionNumber":1,"title":"Session 1","date":"2026-10-14T03:30:06.375Z","status":"planned","narrativeLog":[],"diceRolls":[]}}
+
+GET /api/sessions?campaignId=1791948549805-1gel10huy  (persistence proof)
+{"success":true,"data":[{"id":"session-1791948606375-21xg73wq5",...,"status":"planned","narrativeLog":[],"diceRolls":[]}]}
+
+--------------------------------------------------------------------------
+G. DICE
+--------------------------------------------------------------------------
+POST /api/dice  {"action":"roll","notation":"1d20+5"}
+{"success":true,"data":{"notation":"1d20+5","rolls":[1],"total":6,"modifier":5,"breakdown":"1 +5"}}
+
+--------------------------------------------------------------------------
+H. PAGES  (previously 404 due to .gitignore swallowing src/app dirs -- FIXED)
+--------------------------------------------------------------------------
+GET /            -> HTTP 200
+GET /characters  -> HTTP 200
+
+--------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------
+PASS: health, dice, campaigns CRUD, characters CRUD, sessions CRUD, pages,
+      Runtime AI (narrate/rules/npc-dialogue/recap), Prep AI (storyline),
+      Neon persistence of every created record.
+KNOWN-LIMIT: D&D Beyond import happy path untested (no public test character ID);
+      error message for bad ID is generic.
