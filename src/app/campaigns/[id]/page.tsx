@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import NarrativeDisplay from '@/components/NarrativeDisplay';
 import DiceRoller from '@/components/DiceRoller';
+import PrepPanel from '@/components/PrepPanel';
 
 interface Campaign {
   id: string;
@@ -401,29 +402,13 @@ export default function CampaignPage() {
               </div>
             </div>
             
-            {/* Prepared Materials */}
-            {campaign.preparedMaterials && (
-              <div className="bg-gray-800 rounded-lg p-6">
-                <h3 className="text-lg font-bold text-white mb-4">Prepared Materials</h3>
-                <div className="space-y-2 text-sm">
-                  {campaign.preparedMaterials.npcs?.length > 0 && (
-                    <div className="text-gray-300">
-                      {campaign.preparedMaterials.npcs.length} NPCs created
-                    </div>
-                  )}
-                  {campaign.preparedMaterials.encounters?.length > 0 && (
-                    <div className="text-gray-300">
-                      {campaign.preparedMaterials.encounters.length} encounters designed
-                    </div>
-                  )}
-                  {campaign.preparedMaterials.locations?.length > 0 && (
-                    <div className="text-gray-300">
-                      {campaign.preparedMaterials.locations.length} locations mapped
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* Prepared Materials / Prep AI */}
+            <PrepPanel
+              campaignId={campaignId}
+              campaignName={campaign.name}
+              materials={campaign.preparedMaterials}
+              onGenerated={loadCampaign}
+            />
           </div>
         </div>
       </main>
