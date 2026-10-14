@@ -5,9 +5,14 @@
  *    - Uses Groq (free tier) or Hugging Face for powerful reasoning and creativity
  *    - Runs during campaign setup and planning phases
  * 
- * 2. Runtime AI (Local): Lightweight AI for live session management
- *    - Uses Ollama (local LLM) for fast, private session running
+ * 2. Runtime AI (Cloud-based): Live session management
+ *    - Uses Groq (free tier) by default for cloud/serverless deployment;
+ *      Ollama remains available for local/private runs via RUNTIME_AI_PROVIDER=ollama
  *    - Uses prepared materials from Prep AI to guide sessions
+ *
+ * Default Groq model: openai/gpt-oss-120b (the former llama-3.1-8b-instant was
+ * retired by Groq and now returns 404 model_not_found). Override with
+ * PREP_AI_MODEL / RUNTIME_AI_MODEL env vars if needed.
  */
 
 export type AIProvider = 'ollama' | 'groq' | 'huggingface';
@@ -44,7 +49,7 @@ export function getAIConfig(role: 'prep' | 'runtime'): AIConfig {
     return {
       provider,
       model: provider === 'groq' 
-        ? process.env.PREP_AI_MODEL || 'llama-3.1-8b-instant'
+        ? process.env.PREP_AI_MODEL || 'openai/gpt-oss-120b'
         : process.env.PREP_AI_MODEL || 'mistralai/Mistral-7B-Instruct-v0.2',
       apiUrl: provider === 'groq'
         ? 'https://api.groq.com/openai/v1/chat/completions'
@@ -60,7 +65,7 @@ export function getAIConfig(role: 'prep' | 'runtime'): AIConfig {
     return {
       provider,
       model: provider === 'groq' 
-        ? process.env.RUNTIME_AI_MODEL || 'llama-3.1-8b-instant'
+        ? process.env.RUNTIME_AI_MODEL || 'openai/gpt-oss-120b'
         : provider === 'ollama'
           ? process.env.RUNTIME_AI_MODEL || 'llama3.2'
           : process.env.RUNTIME_AI_MODEL || 'mistralai/Mistral-7B-Instruct-v0.2',
