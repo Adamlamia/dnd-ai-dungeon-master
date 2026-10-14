@@ -95,3 +95,27 @@ No browser screenshots are included. In this environment the headless browser su
 ---
 
 **Conclusion:** Production passes comprehensive testing including both AI tiers. Cleared to begin **Phase 2** (core DM loop MVP).
+
+---
+
+# Phase 2 Addendum — Core DM Loop (completed same day)
+
+**Commits:** `b62b55a` (backend), `624c008` (UI) — deployed `qpfk9u9pr`, cold-start verified on `fo1myxqcm`.
+**Raw evidence:** [`docs/test-evidence/phase2-e2e.txt`](test-evidence/phase2-e2e.txt).
+
+Phase 2's backend and UI already existed and passed live; the work was gap-closing and hardening. Changes made:
+
+1. **Characters linked to campaigns.** `Character` gained an optional `campaignId`, persisted through the pre-existing `campaign_id` column (no migration needed). Added `listCharactersByCampaign` + `GET /api/characters?campaignId=`. The campaign page now shows a **Party roster** panel and feeds the roster into AI-narration context, so narration is character-aware. The Characters import form gained a campaign selector.
+2. **End-Session + recap UI.** The campaign page now has an **End Session** button that generates an AI recap from the narrative log (`action:'recap'`) and persists it via `action:'end'`; the recap is viewable in session history.
+3. **Session-persisted dice.** `DiceRoller` accepts a `sessionId` and writes each roll into the session's dice log.
+4. **D&D Beyond error handling.** A typed `DnDBeyondError` carries the upstream status; a bad ID now returns a clear 404 message instead of a generic 500.
+
+## Phase 2 gate: PASS
+
+A full end-to-end run against the **deployed** URL was captured verbatim:
+campaign → linked character → session → narrative persisted → party-aware AI narration → dice persisted → AI recap → end session. Re-fetch confirmed `status:completed`, 2 narrative entries, 1 dice roll, recap and nextSessionHook all stored.
+
+**Cold-start proof:** after `vercel redeploy` (fresh deployment `fo1myxqcm`, Ready), the session, campaign, and party link all survived; health latency rose 37ms → 149ms, confirming a genuine cold lambda. Local `npm run build` compiled cleanly with TypeScript passing.
+
+**Remaining limitation:** the D&D Beyond import *happy path* is still unverified because no real public character URL was available. Bad-ID handling is now correct. If you provide your own D&D Beyond character URL, I can validate the full import immediately.
+

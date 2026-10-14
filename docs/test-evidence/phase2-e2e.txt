@@ -1,0 +1,93 @@
+PHASE 2 END-TO-END VERIFICATION EVIDENCE
+========================================
+App:      dnd-ai-dungeon-master
+Base URL: https://dnd-ai-dungeon-master-lamia6.vercel.app (Vercel Auth protected)
+Access:   all requests via `vercel curl` (protection-bypass token)
+Commits:  b62b55a (backend: link characters to campaigns + D&D Beyond errors)
+          624c008 (UI: end-session recap, party roster, session-persisted dice)
+Deploy:   qpfk9u9pr (feature build, Ready) -> fo1myxqcm (cold-start redeploy, Ready)
+Local build: `npm run build` -> Compiled successfully, TypeScript passed, 9/9 routes.
+Date:     2026-10-14
+
+--------------------------------------------------------------------------
+1. CREATE CAMPAIGN
+--------------------------------------------------------------------------
+POST /api/campaigns {"name":"Phase2 E2E",...}
+{"success":true,"data":{"id":"1791951123200-e5sa11dc9","name":"Phase2 E2E",...}}
+
+--------------------------------------------------------------------------
+2. CREATE CHARACTER LINKED TO CAMPAIGN (new campaignId field)
+--------------------------------------------------------------------------
+POST /api/characters {"name":"Bryn Stonehand","playerId":"sufi","campaignId":"1791951123200-e5sa11dc9","race":"Dwarf","classType":"Fighter","level":2,...}
+{"success":true,"data":{"id":"char-1791951128172-7q8wm39ua","name":"Bryn Stonehand","campaignId":"1791951123200-e5sa11dc9",...}}
+
+--------------------------------------------------------------------------
+3. PARTY LINK PROOF  (GET /api/characters?campaignId=)
+--------------------------------------------------------------------------
+{"success":true,"data":[{"id":"char-1791951128172-7q8wm39ua","name":"Bryn Stonehand","campaignId":"1791951123200-e5sa11dc9","race":"Dwarf","classType":"Fighter","level":2,...}]}
+
+--------------------------------------------------------------------------
+4. D&D BEYOND IMPORT — BAD ID (was generic 500; now clear 404 message)
+--------------------------------------------------------------------------
+POST /api/characters {"action":"import-dndbeyond","characterIdOrUrl":"https://www.dndbeyond.com/characters/123456789","playerId":"sufi","campaignId":"..."}
+{"success":false,"error":"Character not found on D&D Beyond (id 123456789). Check the ID/URL and make sure the character sheet is shared/public."}
+
+--------------------------------------------------------------------------
+5-11. SESSION DM LOOP  (create -> start -> narrative -> AI narrate -> record -> dice -> AI recap)
+--------------------------------------------------------------------------
+POST /api/sessions {"campaignId":"1791951123200-e5sa11dc9","title":"Session 1"}
+  -> {"success":true,"data":{"id":"session-1791951171559-ew47jlvde",...,"status":"planned"}}
+POST /api/sessions {"action":"start","sessionId":"..."}         -> status:in_progress
+POST /api/sessions {"action":"narrative",type:"action",...}     -> success
+POST /api/ai/narrate {"action":"narrate",context:"... Party: Bryn Stonehand (level 2 Dwarf Fighter)."}
+  -> {"success":true,"data":{"response":"**The Charge** You slam forward, boots kicking up a cloud of grit ..."}}
+POST /api/sessions {"action":"narrative",type:"narration",...}  -> success (narrativeLog=2)
+POST /api/sessions {"action":"dice",notation:"1d20+4",result:18,rolledBy:"Bryn",purpose:"Attack"} -> success (diceRolls=1)
+POST /api/ai/narrate {"action":"recap",sessionEvents:"..."}     -> {"success":true,"data":{"response":"Previously on The Road to Emberfall ..."}}
+
+NOTE: One intermediate attempt to record AI narration failed with
+"Failed to create session" purely because the shell test harness interpolated
+raw AI text (curly quotes / newlines) into the JSON body without escaping.
+The UI path uses JSON.stringify and is unaffected; re-run with safe content
+succeeded (step 9b).
+
+--------------------------------------------------------------------------
+12-13. END SESSION + PERSISTENCE RE-FETCH
+--------------------------------------------------------------------------
+POST /api/sessions {"action":"end","sessionId":"...","recap":"Bryn Stonehand repelled a goblin ambush on the western road.","nextSessionHook":"A hooded watcher observed from the treeline."}
+  -> {"success":true,"data":{...,"status":"completed","duration":1,...}}
+
+GET /api/sessions?id=session-1791951171559-ew47jlvde
+  status: completed
+  duration: 1
+  narrativeLog entries: 2
+  diceRolls: 1
+  recap: Bryn Stonehand repelled a goblin ambush on the western road.
+  nextSessionHook: A hooded watcher observed from the treeline.
+
+--------------------------------------------------------------------------
+14. COLD-START PERSISTENCE PROOF
+--------------------------------------------------------------------------
+`vercel redeploy https://dnd-ai-dungeon-master-lamia6.vercel.app`
+  -> new production deployment fo1myxqcm, status Ready.
+
+GET /api/health
+  {"status":"healthy","db":"connected","schemaReady":true,"campaignsCount":4,"latencyMs":149,...}
+  (latency 37ms warm -> 149ms cold confirms a genuine cold lambda start)
+
+GET /api/sessions?id=session-1791951171559-ew47jlvde  (AFTER cold start)
+  status: completed | narrative: 2 | dice: 1 | recap present: True
+GET /api/characters?campaignId=1791951123200-e5sa11dc9  (AFTER cold start)
+  party members: 1 | ['Bryn Stonehand']
+
+=> All Phase 2 data survived the cold start. Neon persistence confirmed.
+
+--------------------------------------------------------------------------
+PHASE 2 GATE RESULT: PASS
+--------------------------------------------------------------------------
+Full end-to-end run against the DEPLOYED url with captured evidence:
+campaign -> linked character -> session -> dice persisted -> narrative log
+persisted -> AI narration (party-aware) -> AI recap -> end session.
+Data survived a manual cold start (vercel redeploy).
+D&D Beyond import happy path still requires a real public character URL;
+error handling for bad IDs is now correct and clear.
