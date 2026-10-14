@@ -22,6 +22,12 @@ export interface AIConfig {
   model: string;
   apiUrl?: string;
   apiKey?: string;
+  /** Request strict JSON output (Groq response_format json_object). */
+  jsonMode?: boolean;
+  /** Override max completion tokens (reasoning models need headroom). */
+  maxTokens?: number;
+  /** Override sampling temperature. */
+  temperature?: number;
 }
 
 export interface AIMessage {
@@ -140,21 +146,27 @@ async function sendToGroq(messages: AIMessage[], config: AIConfig): Promise<AIRe
     throw new Error('GROQ_API_KEY is required for Groq provider');
   }
   
+  const payload: Record<string, unknown> = {
+    model: config.model,
+    messages: messages.map(m => ({
+      role: m.role,
+      content: m.content,
+    })),
+    temperature: config.temperature ?? 0.7,
+    max_tokens: config.maxTokens ?? 2000,
+  };
+
+  if (config.jsonMode) {
+    payload.response_format = { type: 'json_object' };
+  }
+
   const response = await fetch(config.apiUrl!, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${config.apiKey}`,
     },
-    body: JSON.stringify({
-      model: config.model,
-      messages: messages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })),
-      temperature: 0.7,
-      max_tokens: 2000,
-    }),
+    body: JSON.stringify(payload),
   });
   
   if (!response.ok) {
@@ -255,7 +267,8 @@ Provide:
   },
   
   /**
-   * Generate detailed NPCs with personalities and motivations
+   * Generate detailed NPCs with personalities and motivations.
+   * Returns a strict JSON string (Groq json_object mode).
    */
   async generateNPC(
     role: string,
@@ -264,34 +277,43 @@ Provide:
     alignment: string,
     context: string
   ): Promise<string> {
-    const config = getAIConfig('prep');
+    const config = { ...getAIConfig('prep'), jsonMode: true, maxTokens: 4000 };
     
     const messages: AIMessage[] = [
       {
         role: 'system',
-        content: `You are an expert D&D 5e NPC creator. Create detailed, memorable NPCs with distinct personalities, motivations, secrets, and dialogue patterns.`,
+        content: `You are an expert D&D 5e NPC creator. You respond ONLY with a single valid JSON object and no prose, markdown, or code fences.`,
       },
       {
         role: 'user',
-        content: `Create a detailed NPC with these parameters:
-        
+        content: `Create a detailed D&D 5e NPC with these parameters:
+
 Role in Story: ${role}
 Race: ${race}
 Class: ${classType}
 Alignment: ${alignment}
 Context: ${context}
 
-Provide:
-1. Name and Title
-2. Physical Description
-3. Personality Traits (3)
-4. Ideals, Bonds, Flaws
-5. Motivations and Goals
-6. Secrets
-7. Speech Patterns/Voice Notes
-8. Combat Stats (if applicable)
-9. Relationship to Party
-10. Sample Dialogue Lines (3-5)`,
+Return ONLY a JSON object with exactly these keys:
+{
+  "name": string,
+  "title": string,
+  "role": string,
+  "race": string,
+  "classType": string,
+  "alignment": string,
+  "description": string,            // physical description
+  "personalityTraits": string[],    // exactly 3 short traits
+  "ideals": string,
+  "bonds": string,
+  "flaws": string,
+  "motivations": string,
+  "secrets": string,
+  "dialoguePatterns": string,       // speech/voice notes
+  "sampleDialogue": string[],       // 3-5 lines
+  "combatStats": string,            // brief stat block or "" if non-combatant
+  "relationshipToParty": string
+}`,
       },
     ];
     
@@ -300,7 +322,8 @@ Provide:
   },
   
   /**
-   * Design balanced encounters
+   * Design balanced encounters.
+   * Returns a strict JSON string (Groq json_object mode).
    */
   async designEncounter(
     partyLevel: number,
@@ -309,31 +332,37 @@ Provide:
     difficulty: 'easy' | 'medium' | 'hard' | 'deadly',
     context: string
   ): Promise<string> {
-    const config = getAIConfig('prep');
+    const config = { ...getAIConfig('prep'), jsonMode: true, maxTokens: 4000 };
     
     const messages: AIMessage[] = [
       {
         role: 'system',
-        content: `You are an expert D&D 5e encounter designer. Create balanced, engaging encounters using proper CR calculations and tactical considerations.`,
+        content: `You are an expert D&D 5e encounter designer. You respond ONLY with a single valid JSON object and no prose, markdown, or code fences.`,
       },
       {
         role: 'user',
         content: `Design a D&D 5e encounter:
-        
+
 Party Level: ${partyLevel}
 Party Size: ${partySize}
 Encounter Type: ${encounterType}
 Difficulty: ${difficulty}
 Context: ${context}
 
-Provide:
-1. Encounter Overview
-2. Enemies/NPCs (with stat block references)
-3. Terrain/Environment Features
-4. Tactical Considerations
-5. Rewards (XP, loot)
-6. Alternative Outcomes
-7. Follow-up Hooks`,
+Return ONLY a JSON object with exactly these keys:
+{
+  "name": string,
+  "type": "${encounterType}",
+  "difficulty": "${difficulty}",
+  "overview": string,
+  "enemies": string[],              // each with a short stat-block reference
+  "terrain": string[],
+  "tacticalConsiderations": string[],
+  "rewardsXp": number,
+  "rewardsLoot": string[],
+  "alternativeOutcomes": string[],
+  "followUpHooks": string[]
+}`,
       },
     ];
     
@@ -342,37 +371,41 @@ Provide:
   },
   
   /**
-   * Generate location descriptions
+   * Generate location descriptions.
+   * Returns a strict JSON string (Groq json_object mode).
    */
   async generateLocation(
     locationType: string,
     atmosphere: string,
     purpose: string
   ): Promise<string> {
-    const config = getAIConfig('prep');
+    const config = { ...getAIConfig('prep'), jsonMode: true, maxTokens: 4000 };
     
     const messages: AIMessage[] = [
       {
         role: 'system',
-        content: `You are an expert D&D 5e worldbuilder. Create vivid, immersive location descriptions that engage all senses and provide interactive elements.`,
+        content: `You are an expert D&D 5e worldbuilder. You respond ONLY with a single valid JSON object and no prose, markdown, or code fences.`,
       },
       {
         role: 'user',
         content: `Create a detailed location description:
-        
+
 Type: ${locationType}
 Atmosphere: ${atmosphere}
 Purpose in Story: ${purpose}
 
-Provide:
-1. Location Name
-2. Visual Description (what players see first)
-3. Sensory Details (sounds, smells, textures)
-4. Notable Features
-5. Interactive Elements
-6. Hidden Details (perception checks)
-7. NPCs Present
-8. Atmosphere Notes for DM`,
+Return ONLY a JSON object with exactly these keys:
+{
+  "name": string,
+  "type": string,
+  "visualDescription": string,      // what players see first
+  "sensoryDetails": { "sounds": string, "smells": string, "textures": string },
+  "notableFeatures": string[],
+  "interactiveElements": string[],
+  "hiddenDetails": string[],        // perception-check reveals
+  "npcsPresent": string[],
+  "atmosphere": string              // DM atmosphere notes
+}`,
       },
     ];
     

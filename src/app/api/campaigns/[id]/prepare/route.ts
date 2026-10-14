@@ -106,69 +106,115 @@ export async function POST(
   }
 }
 
-// Helper functions to parse AI responses into structured data
-function parseNPCResponse(aiText: any) {
-  // This is a simplified parser - in production, you'd want more robust parsing
+// ------------------------------------------------------------------
+// JSON parsing helpers (Prep AI now returns strict JSON via json_object mode)
+// ------------------------------------------------------------------
+
+/** Safely parse a model response into an object, tolerating stray code fences. */
+function safeJsonParse(text: string): Record<string, any> | null {
+  if (!text) return null;
+  let raw = text.trim();
+  // Strip ```json ... ``` fences if the model added any despite instructions.
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) raw = fence[1].trim();
+  // Fall back to the first {...} block if there is surrounding prose.
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      try {
+        return JSON.parse(raw.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function asString(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (v === undefined || v === null) return '';
+  return String(v);
+}
+
+function asStringArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(asString).filter((s) => s.length > 0);
+  if (typeof v === 'string' && v.trim()) return [v.trim()];
+  return [];
+}
+
+function genId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+function parseNPCResponse(aiText: string) {
+  const o = safeJsonParse(aiText) || {};
   return {
-    id: `npc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    name: extractField(aiText, 'Name') || 'Unknown NPC',
-    role: extractField(aiText, 'Role') || 'NPC',
-    race: extractField(aiText, 'Race') || 'Human',
-    classType: extractField(aiText, 'Class') || 'Commoner',
-    alignment: extractField(aiText, 'Alignment') || 'True Neutral',
-    description: extractField(aiText, 'Physical Description') || '',
-    personalityTraits: extractList(aiText, 'Personality Traits'),
-    motivations: extractField(aiText, 'Motivations') || '',
-    secrets: extractField(aiText, 'Secrets') || '',
-    dialoguePatterns: extractField(aiText, 'Speech Patterns') || '',
-    sampleDialogue: extractList(aiText, 'Sample Dialogue'),
+    id: genId('npc'),
+    name: asString(o.name) || 'Unknown NPC',
+    title: asString(o.title),
+    role: asString(o.role) || 'NPC',
+    race: asString(o.race) || 'Unknown',
+    classType: asString(o.classType) || 'Commoner',
+    alignment: asString(o.alignment) || 'True Neutral',
+    description: asString(o.description),
+    personalityTraits: asStringArray(o.personalityTraits),
+    ideals: asString(o.ideals),
+    bonds: asString(o.bonds),
+    flaws: asString(o.flaws),
+    motivations: asString(o.motivations),
+    secrets: asString(o.secrets),
+    dialoguePatterns: asString(o.dialoguePatterns),
+    sampleDialogue: asStringArray(o.sampleDialogue),
+    combatStats: asString(o.combatStats),
+    relationshipToParty: asString(o.relationshipToParty),
     relationships: {},
   };
 }
 
-function parseEncounterResponse(aiText: any) {
+function parseEncounterResponse(aiText: string) {
+  const o = safeJsonParse(aiText) || {};
   return {
-    id: `enc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    name: extractField(aiText, 'Encounter Overview')?.split('\n')[0] || 'Encounter',
-    type: 'combat',
-    difficulty: 'medium',
-    description: aiText,
-    tacticalConsiderations: [],
-    rewards: { xp: 0, loot: [] },
-    alternativeOutcomes: [],
-    followUpHooks: [],
+    id: genId('enc'),
+    name: asString(o.name) || 'Encounter',
+    type: asString(o.type) || 'combat',
+    difficulty: asString(o.difficulty) || 'medium',
+    overview: asString(o.overview),
+    description: asString(o.overview) || aiText,
+    enemies: asStringArray(o.enemies),
+    terrain: asStringArray(o.terrain),
+    tacticalConsiderations: asStringArray(o.tacticalConsiderations),
+    rewards: {
+      xp: typeof o.rewardsXp === 'number' ? o.rewardsXp : Number(o.rewardsXp) || 0,
+      loot: asStringArray(o.rewardsLoot),
+    },
+    alternativeOutcomes: asStringArray(o.alternativeOutcomes),
+    followUpHooks: asStringArray(o.followUpHooks),
   };
 }
 
-function parseLocationResponse(aiText: any) {
+function parseLocationResponse(aiText: string) {
+  const o = safeJsonParse(aiText) || {};
+  const sensory = (o.sensoryDetails && typeof o.sensoryDetails === 'object') ? o.sensoryDetails : {};
   return {
-    id: `loc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    name: extractField(aiText, 'Location Name') || 'Unknown Location',
-    type: 'general',
-    description: aiText,
-    visualDescription: extractField(aiText, 'Visual Description') || '',
-    sensoryDetails: {},
-    notableFeatures: [],
-    interactiveElements: [],
-    hiddenDetails: [],
-    npcsPresent: [],
-    atmosphere: '',
+    id: genId('loc'),
+    name: asString(o.name) || 'Unknown Location',
+    type: asString(o.type) || 'general',
+    description: asString(o.visualDescription) || aiText,
+    visualDescription: asString(o.visualDescription),
+    sensoryDetails: {
+      sounds: asString(sensory.sounds),
+      smells: asString(sensory.smells),
+      textures: asString(sensory.textures),
+    },
+    notableFeatures: asStringArray(o.notableFeatures),
+    interactiveElements: asStringArray(o.interactiveElements),
+    hiddenDetails: asStringArray(o.hiddenDetails),
+    npcsPresent: asStringArray(o.npcsPresent),
+    atmosphere: asString(o.atmosphere),
   };
 }
 
-function extractField(text: string, fieldName: string): string {
-  const regex = new RegExp(`${fieldName}:?\\s*\\n([\\s\\S]*?)(?=\\n\\w+:|$)`, 'i');
-  const match = text.match(regex);
-  return match ? match[1].trim() : '';
-}
-
-function extractList(text: string, fieldName: string): string[] {
-  const field = extractField(text, fieldName);
-  if (!field) return [];
-  
-  // Split by numbered or bulleted items
-  return field
-    .split(/\n\s*(?:\d+\.|\-|\*)\s*/)
-    .filter(item => item.trim().length > 0)
-    .map(item => item.trim());
-}
